@@ -2,15 +2,15 @@
 seed: 131
 device: cuda:3
 mode: train
-best_path: None
+best_path: /home/panda/remote/StableST/experiments/BJTaxi/20240730-135751/best_model.pth
 debug: False # true means no log in file
 
 ## data
 data_dir: data
 dataset: BJTaxi 
 input_length: 35 # 8+9*3
-batch_size: 32  # 32 will cause oom
-test_batch_size: 32
+batch_size: 64  # 32 will cause oom
+test_batch_size: 64
 graph_file: data/BJTaxi/adj_mx.npz # num_nodes: 1024
 num_nodes: 1024
 
@@ -30,10 +30,13 @@ nmb_prototype: 50           # number of cluster
 yita: 0.5                   # balance for inflow loss and outflow loss, $yita * inflow + (1 - yita) * outflow$
 layers: 3
 heads: 2
-
+K : 32
+bank_gamma : 0.5 # 0.5
+kw : 2
+mi_w : 4
 
 ## train
-epochs: 400
+epochs: 3
 lr_init: 0.005
 early_stop: True
 early_stop_patience: 50
@@ -44,3 +47,5 @@ temp: 2               # tempurature parameter in dwa, a larger T means more simi
 MMI: False
 lr_patience: 20
 lr_mode: add
+
+use_RevIN: False

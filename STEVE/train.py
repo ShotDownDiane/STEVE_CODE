@@ -1,6 +1,8 @@
 import os
 import traceback
 from datetime import datetime
+import sys
+sys.path.append('/home/zhangwt/StableST')
 
 import warnings
 
@@ -23,11 +25,11 @@ from lib.dataloader import get_dataloader
 from lib.logger import get_logger, PD_Stats
 from lib.utils import dwa
 import numpy as np
-from models.our_model import STEVE
+from models.our_model import StableST
 
 
 class Trainer(object):
-    def __init__(self, model, optimizer, dataloader, graph, lr_scheduler,args, load_state=None):
+    def __init__(self, model, optimizer, dataloader, graph, lr_scheduler,args, graph2=None,load_state=None):
         super(Trainer, self).__init__()
         self.model = model
         self.optimizer = optimizer
@@ -38,7 +40,10 @@ class Trainer(object):
         self.graph = graph
         self.lr_scheduler=lr_scheduler
         self.args = args
-
+        if graph2 != None:
+            self.test_graph=graph2
+        else:
+            self.test_graph=graph
 
         self.train_per_epoch = len(self.train_loader)
         if self.val_loader != None:
@@ -61,39 +66,52 @@ class Trainer(object):
 
     def train_epoch(self, epoch, loss_weights):
         self.model.train()
-
+        p=epoch/self.args.epochs*1.0
         total_loss = 0
         total_sep_loss = np.zeros(3)
-        start_time=datetime.now()
+        lms=[]
+        t1=datetime.now()
         for batch_idx, (data, target, time_label,c) in enumerate(self.train_loader):
+            
+
             self.optimizer.zero_grad()
             # input shape: n,l,v,c; graph shape: v,v;
-            t1=datetime.now()
-            repr1, repr2 = self.model(data)  # nvc
-            loss, sep_loss = self.model.calculate_loss(data,repr1, repr2, target, c, time_label, self.scaler, loss_weights,True)
-            t2=datetime.now()
+            
+            Z, H = self.model(data)  # nvc
+            loss, sep_loss,lm = self.model.calculate_loss(Z, H, target, c, time_label, self.scaler, loss_weights,p,True)
+            if type(lm) == int:
+                lms.append(lm)
+            else:
+                lms.append(lm.item())
+            # t2=datetime.now()
             assert not torch.isnan(loss)
 
             loss.backward()
+            # t3=datetime.now()
             # gradient clipping
+            # import pdb
+            # pdb.set_trace()
+            # for param in self.model.parameters():
+            #     print("param=%s, grad=%s" % (param.data, param.grad))
+            
+            # import pdb
+            # pdb.set_trace()
             if self.args.grad_norm:
                 torch.nn.utils.clip_grad_norm_(
                     get_model_params([self.model]),
                     self.args.max_grad_norm)
-            t3=datetime.now()
+            # t4=datetime.now()
             self.optimizer.step()
             total_loss += loss.item()
             total_sep_loss += sep_loss
-        endtime=datetime.now()
-        print(endtime-start_time)
-        print(t1-start_time)
-        print(t2-start_time)
-        print(t3-start_time)
+        t5=datetime.now()
+        print(f"train_time:{t5-t1}")
+
 
         train_epoch_loss = total_loss / self.train_per_epoch
         total_sep_loss = total_sep_loss / self.train_per_epoch
         self.logger.info('*******Train Epoch {}: averaged Loss : {:.6f}'.format(epoch, train_epoch_loss))
-
+        self.logger.info('*******Train Epoch {}: averaged lm : {:.6f}'.format(epoch, np.mean(lms)))
         return train_epoch_loss, total_sep_loss
 
     def val_epoch(self, epoch, val_dataloader, loss_weights):
@@ -103,9 +121,9 @@ class Trainer(object):
         total_sep_loss = np.zeros(3)
         with torch.no_grad():
             for batch_idx, (data, target,time_label,c) in enumerate(val_dataloader):
-                repr1, repr2 = self.model(data)
+                Z, H = self.model(data)
                 # c_hat=self.model.predict_con(data)
-                loss, sep_loss = self.model.calculate_loss(data,repr1, repr2, target, c, time_label,self.scaler, loss_weights)
+                loss, sep_loss,lm = self.model.calculate_loss(Z, H, target, c, time_label, self.scaler, loss_weights)
                 # loss = self.model.pred_loss(repr1, repr1, target, self.scaler)
                 if not torch.isnan(loss):
                     total_val_loss += loss.item()
@@ -143,6 +161,16 @@ class Trainer(object):
             val_dataloader = self.val_loader if self.val_loader != None else self.test_loader
             val_epoch_loss = self.val_epoch(epoch, val_dataloader, loss_weights)
 
+            if epoch in [1,16,32,64,128]:
+                save_dict = {
+                    "epoch": epoch,
+                    "model": self.model.state_dict(),
+                    "optimizer": self.optimizer.state_dict(),
+                }
+                save_dir=os.path.join(self.args.log_dir,'epoch{}.pth'.format(epoch))
+                self.logger.info('**************Current {} model saved to {}'.format(epoch,save_dir))
+                torch.save(save_dict, save_dir)
+
             if val_epoch_loss < best_loss:
                 best_loss = val_epoch_loss
                 best_epoch = epoch
@@ -153,6 +181,7 @@ class Trainer(object):
                     "model": self.model.state_dict(),
                     "optimizer": self.optimizer.state_dict(),
                 }
+
                 if not self.args.debug:
                     self.logger.info('**************Current best model saved to {}'.format(self.best_path))
                     torch.save(save_dict, self.best_path)
@@ -161,7 +190,7 @@ class Trainer(object):
             
             self.lr_scheduler.step(val_epoch_loss)
 
-            #early stopping
+            # early stopping
             if self.args.early_stop and not_improved_count == self.args.early_stop_patience:
                 self.logger.info("Validation performance didn\'t improve for {} epochs. "
                                  "Training stops.".format(self.args.early_stop_patience))
@@ -178,12 +207,13 @@ class Trainer(object):
             best_epoch))
 
         # test
+        self.logger.info("load best model from {}".format(self.best_path))
         state_dict = save_dict if self.args.debug else torch.load(
             self.best_path, map_location=torch.device(self.args.device))
         self.model.load_state_dict(state_dict['model'])
         self.logger.info("== Test results.")
         test_results = self.test(self.model, self.test_loader, self.scaler,
-                                 self.graph, self.logger, self.args)
+                                 self.test_graph, self.logger, self.args)
         results = {
             'best_val_loss': best_loss,
             'best_val_epoch': best_epoch,
@@ -197,25 +227,54 @@ class Trainer(object):
         model.eval()
         y_pred = []
         y_true = []
+        x=[]
+        atts=[]
+        Cs=[]
+        Hs=[]
+        start_time=time.time()
         with torch.no_grad():
             for batch_idx, (data, target, c) in enumerate(dataloader):
-                repr1, repr2 = model(data)
+                # weather
+                # if batch_idx!=10:
+                #     continue
+                x.append(data)
+                Z, H  = model(data,graph)
                 # c_hat=model.predict_con(data)
-                pred_output = model.predict(repr1, repr2,data)
+                pred_output,att,C_tensor, H = model.predict_test(Z, H)
+                pred_output = pred_output.squeeze(1)
                 target = target.squeeze(1)
                 y_true.append(target)
                 y_pred.append(pred_output)
+                atts.append(att.cpu().detach())
+                Cs.append(C_tensor.cpu().detach())
+                Hs.append(H.cpu().detach())
+        
         y_true = scaler.inverse_transform(torch.cat(y_true, dim=0))
         y_pred = scaler.inverse_transform(torch.cat(y_pred, dim=0))
 
+        x=torch.cat(x,dim=0)
+        atts=torch.cat(atts,dim=0)
+        Cs=torch.cat(Cs,dim=0)
+        Hs=torch.cat(Hs,dim=0)
+
+        end_time=time.time()
+        print(start_time)
+        print(end_time-start_time)
+        logger.info(end_time-start_time)
+
+        save_path=os.path.join(args.log_dir,'result.npz')
+        np.savez(save_path,y_true=y_true.cpu().numpy(),y_pred=y_pred.cpu().numpy(),x=x.cpu().numpy(),atts=atts.cpu().numpy())
+        rep_path=os.path.join(args.log_dir,'representation.npz')
+        np.savez(rep_path,C=Cs.cpu().numpy(),H=Hs.cpu().numpy())
+
         test_results = []
         # inflow
-        mae, mape = test_metrics(y_pred[..., 0], y_true[..., 0])
-        logger.info("INFLOW, MAE: {:.2f}, MAPE: {:.4f}%".format(mae, mape * 100))
-        test_results.append([mae, mape])
+        # mae, mape = test_metrics(y_pred[..., 0], y_true[..., 0])
+        # logger.info("INFLOW, MAE: {:.2f}, MAPE: {:.4f}%".format(mae, mape * 100))
+        # test_results.append([mae, mape])
         # outflow
-        mae, mape = test_metrics(y_pred[..., 1], y_true[..., 1])
-        logger.info("OUTFLOW, MAE: {:.2f}, MAPE: {:.4f}%".format(mae, mape * 100))
+        mae, mape = test_metrics(y_pred, y_true)
+        logger.info("FLOW, MAE: {:.2f}, MAPE: {:.4f}%".format(mae, mape * 100))
         test_results.append([mae, mape])
 
         return np.stack(test_results, axis=0)
@@ -230,7 +289,8 @@ def make_one_hot(labels, classes):
 
 def main(args):
 
-    A = load_graph(args.graph_file, device=args.device)  # �ڽӾ���
+    # A,A2 = load_graph(args.graph_file, device=args.device)  # �ڽӾ���
+    A = load_graph(args.graph_file, device=args.device)
 
     init_seed(args.seed)
 
@@ -242,11 +302,13 @@ def main(args):
         device=args.device
     )
 
-    current_time = datetime.now().strftime('%Y%m%d-%H%M%S')
-    current_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-    log_dir = os.path.join(current_dir, 'experiments', 'NYCBike1', current_time)
-    model = STEVE(args=args, adj=A, in_channels=args.d_input, embed_size=args.d_model,
+    # current_time = datetime.now().strftime('%Y%m%d-%H%M%S')
+    # current_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+    # log_dir = os.path.join(current_dir, 'experiments', 'NYCBike1', current_time)
+    model = StableST(args=args, adj=A, in_channels=args.d_input, embed_size=args.d_model,
                 T_dim=args.input_length, output_T_dim=1, output_dim=args.d_output,device=args.device).to(args.device)
+
+    
 
     optimizer = torch.optim.Adam(
         params=model.parameters(),
@@ -263,6 +325,7 @@ def main(args):
         optimizer=optimizer,
         dataloader=dataloader,
         graph=A,
+        graph2=A,
         lr_scheduler=lr_scheduler,
         args=args
     )
@@ -286,6 +349,10 @@ def main(args):
     except:
         trainer.logger.info(traceback.format_exc())
 
+    trainer.logger.info("abulation is {}".format(args.ablation))
+    trainer.logger.info("bank gradient!")
+    trainer.logger.info("gamma {}".format(args.bank_gamma))
+    trainer.logger.info("kw {}".format(args.kw))
 
 
 

@@ -2,15 +2,15 @@
 seed: 31
 device: cuda:3
 mode: train
-best_path: None 
+best_path: /home/zhangwt/remote/StableST/experiments/NYCTaxi/20240510-014845/best_model.pth
 debug: False 
 
 ## data
 data_dir: data
 dataset: NYCTaxi 
 input_length: 35
-batch_size: 32
-test_batch_size: 32
+batch_size: 64
+test_batch_size: 64
 graph_file: data/NYCTaxi/adj_mx.npz # num_nodes 200 (20 x 10)
 num_nodes: 200
 
@@ -28,9 +28,13 @@ shm_temp: 0.5               # temperature for loss of spatial heterogeneity mode
 nmb_prototype: 4            # number of clusters
 yita: 0.5                   # balance for inflow loss and outflow loss, $yita * inflow + (1 - yita) * outflow$
 layers: 3
+K : 64
+bank_gamma : 0.2
+kw : 1
+mi_w : 2
 
 ## train 
-epochs: 400
+epochs: 3
 lr_init: 0.001 
 early_stop: True
 early_stop_patience: 50
@@ -38,6 +42,8 @@ grad_norm: True
 max_grad_norm: 5
 use_dwa: True         # whether to use dwa for loss balance
 temp: 2               # tempurature parameter in dwa, a larger T means more similer weights
-MMI: True
+MMI: False
 lr_patience: 20
 lr_mode: only
+
+use_RevIN: True

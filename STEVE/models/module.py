@@ -1,3 +1,4 @@
+from typing import Any
 import torch
 import torch.nn as nn
 import torch.nn.init as init
@@ -23,9 +24,13 @@ class CLUB(nn.Module):
         #print("create CLUB with dim {}, {}, hiddensize {}".format(x_dim, y_dim, hidden_size))
         self.p_mu = nn.Sequential(nn.Linear(x_dim, hidden_size//2),
                                        nn.ReLU(),
+                                       nn.Linear(hidden_size//2, hidden_size//2),
+                                       nn.ReLU(),
                                        nn.Linear(hidden_size//2, y_dim))
         # p_logvar outputs log of variance of q(Y|X)
         self.p_logvar = nn.Sequential(nn.Linear(x_dim, hidden_size//2),
+                                       nn.ReLU(),
+                                       nn.Linear(hidden_size//2, hidden_size//2),
                                        nn.ReLU(),
                                        nn.Linear(hidden_size//2, y_dim),
                                        nn.Tanh())
@@ -35,19 +40,17 @@ class CLUB(nn.Module):
         logvar = self.p_logvar(x_samples)
         return mu, logvar
     
-    def forward(self, x_samples, y_samples): 
+    def forward(self, x_samples, y_samples):
         mu, logvar = self.get_mu_logvar(x_samples)
         
-        # log of conditional probability of positive sample pairs
-        positive = - (mu - y_samples)**2 /2./logvar.exp()  
+        sample_size = x_samples.shape[0]
+        #random_index = torch.randint(sample_size, (sample_size,)).long()
+        random_index = torch.randperm(sample_size).long()
         
-        prediction_1 = mu.unsqueeze(1)          # shape [nsample,1,dim]
-        y_samples_1 = y_samples.unsqueeze(0)    # shape [1,nsample,dim]
-
-        # log of conditional probability of negative sample pairs
-        negative = - ((y_samples_1 - prediction_1)**2).mean(dim=1)/2./logvar.exp() 
-
-        return (positive.sum(dim = -1) - negative.sum(dim = -1)).mean()
+        positive = - (mu - y_samples)**2 / logvar.exp()
+        negative = - (mu - y_samples[random_index])**2 / logvar.exp()
+        upper_bound = (positive.sum(dim = -1) - negative.sum(dim = -1)).mean()
+        return upper_bound/2.
 
     def loglikeli(self, x_samples, y_samples): # unnormalized loglikelihood 
         mu, logvar = self.get_mu_logvar(x_samples)
@@ -100,3 +103,23 @@ class ST_encoder(nn.Module):
         x_st1 = self.st_conv1(x, graph)   # (batch_size, c[2](64), input_length-kt+1-kt+1, num_nodes)
         x_st2 = self.st_conv2(x_st1, graph)  # (batch_size, c[2](128), input_length-kt+1-kt+1-kt+1-kt+1, num_nodes)
         return x_st2
+
+class Configs(object):
+    
+    def __init__(self,config={}):
+        self.config = config
+
+    def get(self, key, default=None):
+        return self.config.get(key, default)
+
+    def __getitem__(self, key):
+        if key in self.config:
+            return self.config[key]
+        else:
+            raise KeyError('{} is not in the config'.format(key))
+
+    def __setitem__(self, key, value):
+        self.config[key] = value
+
+    def __contains__(self, key):
+        return key in self.config

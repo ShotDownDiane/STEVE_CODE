@@ -1,8 +1,8 @@
 ## global
 seed: 42
-device: cuda:1
+device: cuda:3
 mode: train
-best_path: None 
+best_path: /home/zhangwt/remote/StableST/experiments/NYCBike2/20240730-171317/best_model.pth
 debug: False 
 
 ## data
@@ -28,9 +28,13 @@ shm_temp: 0.5               # temperature for loss of spatial heterogeneity mode
 nmb_prototype: 10           # number of clusters
 yita: 0.5                   # balance for inflow loss and outflow loss, $yita * inflow + (1 - yita) * outflow$
 layers: 3
+K : 32
+bank_gamma : 0.6
+kw : 2.0
+mi_w : 2
 
 ## train 
-epochs: 400
+epochs: 3
 lr_mode: add
 lr_init: 0.001
 early_stop: True
@@ -39,6 +43,7 @@ grad_norm: True
 max_grad_norm: 5
 use_dwa: True         # whether to use dwa for loss balance
 temp: 2               # tempurature parameter in dwa, a larger T means more similer weights
-MMI: True
+MMI: False
 lr_patience: 20
 
+use_RevIN: False
