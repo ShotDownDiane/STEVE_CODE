@@ -1,7 +1,7 @@
 # Seeing the Unseen: Learning Basis Confounder Representations for Robust Traffic Prediction
 This is a PyTorch implementation of Seeing the Unseen: Learning Basis Confounder Representations for Robust Traffic Prediction (*STEVE*) for traffic flow prediction as described in our paper: Jiahao Ji*, Wentao Zhang*, Jingyuan Wang, Chao Huang, Seeing the Unseen: Learning Basis Confounder Representations for Robust Traffic Prediction.
 
-![framework](xxxurl)
+![framework](./framework.jpg)
 
 
 ## Requirement
