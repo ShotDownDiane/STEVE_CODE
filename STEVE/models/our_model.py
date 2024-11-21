@@ -431,23 +431,23 @@ class StableST(nn.Module):
         sep_loss = [lp.item()]
 
         # mi_net train
-        # if training and self.args.ablation!='idp':
-        #     z1_temp=H.squeeze(1).reshape(-1,H.shape[-1]) # nb,c
-        #     z2_temp=C_tensor.reshape(-1,H.shape[-1])# nb,c
-        #     self.mi_net.train()
-        #     all_len=z1_temp.shape[0]
-        #     random_choice=np.random.choice(all_len,int(all_len*0.1))
-        #     temp1=z1_temp[random_choice].detach()
-        #     temp2=z2_temp[random_choice].detach()
-        #     for i in range(5):
-        #         self.optimizer_mi_net.zero_grad()
-        #         mi_loss=self.mi_net.learning_loss(temp1,temp2)
-        #         mi_loss.backward()
-        #         self.optimizer_mi_net.step()
-        #     self.mi_net.eval()
+        if training and self.args.ablation!='idp':
+             z1_temp=H.squeeze(1).reshape(-1,H.shape[-1]) # nb,c
+             z2_temp=C_tensor.reshape(-1,H.shape[-1])# nb,c
+             self.mi_net.train()
+             all_len=z1_temp.shape[0]
+             random_choice=np.random.choice(all_len,int(all_len*0.1))
+             temp1=z1_temp[random_choice].detach()
+             temp2=z2_temp[random_choice].detach()
+             for i in range(5):
+                 self.optimizer_mi_net.zero_grad()
+                 mi_loss=self.mi_net.learning_loss(temp1,temp2)
+                 mi_loss.backward()
+                 self.optimizer_mi_net.step()
+             self.mi_net.eval()
             
-        #     lm = self.mi_net(z1_temp,z2_temp)
-        #     loss += 0.1*lm
+             lm = self.mi_net(z1_temp,z2_temp)
+             loss += 0.1*lm
 
         loss += loss_weights[0] * lp
 
