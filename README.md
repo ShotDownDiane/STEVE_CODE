@@ -16,7 +16,7 @@ torch==1.10.1
 
 ## Datasets
 
-The datasets range from `{NYCBike1, NYCBike2, NYCTaxi, BJTaxi}`. You can download them from [Beihang Cloud Drive](xxxurl).
+The datasets range from `{NYCBike1, NYCBike2, NYCTaxi, BJTaxi}`. You can download them from [Google Drive](https://drive.google.com/file/d/1yWj3djQdbbQxTOFTg7b-QzDT2sJzXE1L/view?usp=drive_link).
 
 Each dataset is composed of 4 files, namely `train.npz`, `val.npz`, `test.npz`, and `adj_mx.npz`.
 
